@@ -17,6 +17,11 @@
   - 🎙️ **Studio Podcast**: Warm low-end, rich presence EQ, gentle gating, and broadcast compression.
   - 🌪️ **Fan & Room Killer**: Aggressive suppression for noisy mechanical keyboards and loud laptop cooling fans.
   - 🎛️ **Custom Pro DSP**: Full manual control over gate threshold, suppression depth, low-cut, and high-cut frequencies.
+- **Interactive Screen Size & Custom Region Selector**:
+  - Choose capture scope: **Full Screen**, **Application Window**, **Chrome Tab**, or **Custom Area**.
+  - **In-Page Interactive Drag & Resize Overlay**: Draw or drag a custom bounding box on the screen with 8 corner/edge resize handles and live pixel dimension badge.
+  - Quick **Aspect Ratio Presets**: One-click lock to `16:9` (Widescreen), `4:3` (Standard), `1:1` (Square / Social), or `9:16` (Vertical / Shorts / Reels).
+  - High-performance zero-copy WebCodecs video frame cropping on the GPU with zero timer throttling.
 - **High-Definition Screen Capture**:
   - Capture **Entire Screen / Desktop** (multi-monitor support), **Specific Application Window**, or **Browser Tab**.
   - Crisp resolution options: **1080p Full HD**, **720p HD**, and **4K Ultra HD** at up to **60 FPS**.
@@ -98,21 +103,26 @@ noise-cancellation-screen-record/
 ## 🎙️ How to Use
 
 1. Click the CrispRec toolbar icon to open the popup.
-2. Select your desired inputs:
+2. Select your **Recording Area & Size**:
+   - `Full Screen`: Records your entire monitor.
+   - `Window`: Records an application window.
+   - `Tab`: Records an individual browser tab.
+   - `Custom Area`: Click **Drag & Select Area on Screen** to interactively draw or resize a selection box on any webpage with 8 handles and aspect ratio presets (`16:9`, `4:3`, `1:1`, `9:16`). Click **✓ Confirm Area** when satisfied.
+3. Select your desired inputs:
    - **Microphone**: Toggle ON and pick your microphone.
    - **System Audio**: Toggle ON to record tab/desktop audio.
    - **Webcam Overlay**: Toggle ON if you want a picture-in-picture camera bubble.
-3. Choose an **AI Noise Profile**:
+4. Choose an **AI Noise Profile**:
    - `Balanced` (Default)
    - `Studio` (Rich podcast warmth)
    - `Fan Killer` (Heavy background noise reduction)
    - `Pro DSP` (Fine-tune your own gate and filters)
-4. Click **Test Mic** to speak into your microphone and view the real-time spectrum and voice activity indicator on the canvas.
-5. Click **Start Recording** (or press <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>).
-6. Pick your screen, window, or tab from Chrome's native prompt.
-7. While recording:
+5. Click **Test Mic** to speak into your microphone and view the real-time spectrum and voice activity indicator on the canvas.
+6. Click **Start Recording** (or press <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>).
+7. Pick your screen, window, or tab from Chrome's native prompt.
+8. While recording:
    - Use the in-page floating toolbar or keyboard shortcuts to Pause, Resume, or Mute.
-8. When finished, click **Stop**:
+9. When finished, click **Stop**:
    - The **CrispRec Studio** opens automatically with full playback, seekability, and 1-click download options!
 
 ---

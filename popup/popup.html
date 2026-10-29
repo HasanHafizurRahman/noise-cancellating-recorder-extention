@@ -61,6 +61,55 @@
 
     <!-- IDLE SETUP VIEW -->
     <div id="setup-view" class="view-panel">
+      <!-- Recording Area Mode Selection -->
+      <section class="section">
+        <label class="section-label">Recording Area & Size</label>
+        <div class="area-mode-grid">
+          <button class="area-mode-btn active" data-mode="full">
+            <span class="mode-icon">🖥️</span>
+            <span class="mode-name">Full Screen</span>
+          </button>
+          <button class="area-mode-btn" data-mode="window">
+            <span class="mode-icon">🪟</span>
+            <span class="mode-name">Window</span>
+          </button>
+          <button class="area-mode-btn" data-mode="tab">
+            <span class="mode-icon">🌐</span>
+            <span class="mode-name">Tab</span>
+          </button>
+          <button class="area-mode-btn" data-mode="custom">
+            <span class="mode-icon">✂️</span>
+            <span class="mode-name">Custom Area</span>
+          </button>
+        </div>
+
+        <!-- Custom Area Selector Panel -->
+        <div id="custom-area-card" class="custom-area-card hidden">
+          <div class="area-status-wrap">
+            <div class="area-status-info">
+              <span class="area-status-title">Selected Region:</span>
+              <span id="selected-area-label" class="area-status-dim">Full View (Click below to select)</span>
+            </div>
+            <button id="reset-area-btn" class="reset-area-btn" title="Reset to Full Screen">&times;</button>
+          </div>
+
+          <div class="aspect-ratio-row">
+            <span class="aspect-label">Aspect:</span>
+            <div class="aspect-btn-group">
+              <button class="aspect-btn" data-ratio="16:9">16:9</button>
+              <button class="aspect-btn" data-ratio="4:3">4:3</button>
+              <button class="aspect-btn" data-ratio="1:1">1:1</button>
+              <button class="aspect-btn" data-ratio="9:16">9:16</button>
+            </div>
+          </div>
+
+          <button id="select-area-btn" class="select-area-btn">
+            <svg viewBox="0 0 24 24"><path d="M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z"/></svg>
+            <span>Drag & Select Area on Screen</span>
+          </button>
+        </div>
+      </section>
+
       <!-- Media Source Toggles -->
       <section class="section">
         <label class="section-label">Media & Audio Inputs</label>

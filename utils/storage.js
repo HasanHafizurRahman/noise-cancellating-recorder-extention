@@ -16,6 +16,10 @@ export const DEFAULT_SETTINGS = {
   countdown: 3, // 0, 3, 5, 10
   floatingControls: true,
 
+  // Screen area / region selector
+  recordingAreaMode: 'full', // 'full', 'window', 'tab', 'custom'
+  cropArea: null, // { x, y, width, height, screenWidth, screenHeight }
+
   // Noise cancellation settings
   noiseCancellation: true,
   ncPreset: 'balanced', // 'balanced', 'studio', 'aggressive', 'custom'

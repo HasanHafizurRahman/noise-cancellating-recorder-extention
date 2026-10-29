@@ -1,5 +1,9 @@
 /**
  * CrispRec Offscreen Media Capture & Audio Processing Controller
+ *
+ * Handles screen capture via standard navigator.mediaDevices.getDisplayMedia(),
+ * microphone capture, webcam overlay, AI DSP audio processing,
+ * dynamic screen area cropping, and WebM seekable recording.
  */
 
 import { DspAudioEngine } from './audio/dsp-engine.js';
@@ -11,8 +15,8 @@ let recordedChunks = [];
 let screenStream = null;
 let micStream = null;
 let webcamStream = null;
-let compositeStream = null;
 let dspEngine = null;
+let videoPipelineCleanup = null;
 
 let recordingStartTime = 0;
 let totalPausedDuration = 0;
@@ -21,7 +25,6 @@ let timerInterval = null;
 let isPaused = false;
 let isMicMuted = false;
 let currentOptions = {};
-let renderLoopId = null;
 
 // Message dispatcher from service worker / popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -29,9 +32,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.type) {
     case 'START_RECORDING':
-      startRecording(message.streamId, message.options)
+      startRecording(message.options || {})
         .then(() => sendResponse({ success: true }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
+        .catch((err) => {
+          console.warn('startRecording caught error:', err);
+          sendResponse({ success: false, error: err.message });
+        });
       return true; // async response
 
     case 'STOP_RECORDING':
@@ -75,15 +81,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function startRecording(streamId, options = {}) {
+/**
+ * Starts screen recording and audio DSP graph
+ */
+async function startRecording(options = {}) {
   currentOptions = options;
+  cleanupResources(); // Clean up previous session state
   recordedChunks = [];
   isPaused = false;
   isMicMuted = false;
   totalPausedDuration = 0;
   pauseStartTime = 0;
 
-  // 1. Determine Resolution constraints
+  // 1. Resolution & Framerate Constraints
   let maxWidth = 1920;
   let maxHeight = 1080;
   if (options.videoQuality === '720p') {
@@ -95,56 +105,35 @@ async function startRecording(streamId, options = {}) {
   }
   const fps = options.frameRate || 60;
 
-  // 2. Capture Screen / Window / Tab via streamId with system audio fallback
-  try {
-    screenStream = await navigator.mediaDevices.getUserMedia({
-      audio: options.systemAudio ? {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: streamId
-        }
-      } : false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: streamId,
-          maxWidth: maxWidth,
-          maxHeight: maxHeight,
-          maxFrameRate: fps
-        }
-      }
-    });
-  } catch (err) {
-    // If capture failed and system audio was requested, the user may have unchecked "Share audio" in the picker
-    if (options.systemAudio) {
-      console.warn('Screen capture with audio failed (user may have deselected audio in prompt), retrying video only:', err);
-      try {
-        screenStream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: streamId,
-              maxWidth: maxWidth,
-              maxHeight: maxHeight,
-              maxFrameRate: fps
-            }
-          }
-        });
-      } catch (videoOnlyErr) {
-        console.error('Failed to capture desktop stream video:', videoOnlyErr);
-        throw new Error('Could not access screen media: ' + videoOnlyErr.message);
-      }
-    } else {
-      console.error('Failed to capture desktop stream:', err);
-      throw new Error('Could not access screen media: ' + err.message);
-    }
+  // 2. Request Display Stream via standard getDisplayMedia
+  const displayMediaOptions = {
+    video: {
+      width: { ideal: maxWidth, max: maxWidth },
+      height: { ideal: maxHeight, max: maxHeight },
+      frameRate: { ideal: fps }
+    },
+    audio: options.systemAudio !== false
+  };
+
+  // Surface hints if provided
+  if (options.recordingAreaMode === 'window') {
+    displayMediaOptions.video.displaySurface = 'window';
+  } else if (options.recordingAreaMode === 'tab') {
+    displayMediaOptions.video.displaySurface = 'browser';
   }
 
-  // Listen for user ending share via Chrome's native bottom bar
-  const videoTrack = screenStream.getVideoTracks()[0];
-  if (videoTrack) {
-    videoTrack.onended = () => {
+  try {
+    screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+  } catch (err) {
+    console.warn('getDisplayMedia was canceled or failed:', err);
+    chrome.runtime.sendMessage({ type: 'RECORDING_CANCELED' }).catch(() => {});
+    throw err;
+  }
+
+  // Handle user ending screen share via Chrome's bottom bar
+  const screenVideoTrack = screenStream.getVideoTracks()[0];
+  if (screenVideoTrack) {
+    screenVideoTrack.onended = () => {
       console.log('Screen sharing track ended by user');
       stopRecording();
     };
@@ -157,7 +146,6 @@ async function startRecording(streamId, options = {}) {
         sampleRate: 48000,
         channelCount: 2,
         echoCancellation: true,
-        // Disable browser aggressive noise suppression so our custom AI DSP takes full control
         noiseSuppression: false,
         autoGainControl: false
       };
@@ -168,7 +156,7 @@ async function startRecording(streamId, options = {}) {
 
       micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     } catch (micErr) {
-      console.warn('Microphone access failed or denied:', micErr);
+      console.warn('Microphone capture failed or denied in offscreen:', micErr);
       micStream = null;
     }
   }
@@ -188,7 +176,7 @@ async function startRecording(streamId, options = {}) {
 
       webcamStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
     } catch (camErr) {
-      console.warn('Webcam access failed or denied:', camErr);
+      console.warn('Webcam access failed or denied in offscreen:', camErr);
       webcamStream = null;
     }
   }
@@ -207,105 +195,10 @@ async function startRecording(streamId, options = {}) {
     releaseMs: options.releaseMs
   });
 
-  // 6. Handle Video Source (Direct or Canvas Compositing for Webcam PiP)
-  let finalVideoTrack = null;
-
-  if (webcamStream) {
-    // Set up canvas compositing
-    const canvas = document.getElementById('composite-canvas');
-    const screenVideo = document.getElementById('screen-video');
-    const webcamVideo = document.getElementById('webcam-video');
-
-    screenVideo.srcObject = screenStream;
-    webcamVideo.srcObject = webcamStream;
-
-    await Promise.all([
-      new Promise((res) => (screenVideo.onloadedmetadata = res)),
-      new Promise((res) => (webcamVideo.onloadedmetadata = res))
-    ]);
-
-    const cWidth = screenVideo.videoWidth || maxWidth;
-    const cHeight = screenVideo.videoHeight || maxHeight;
-    canvas.width = cWidth;
-    canvas.height = cHeight;
-
-    const ctx = canvas.getContext('2d');
-    const pipSize = options.webcamSize || Math.round(cHeight * 0.25);
-    const pipShape = options.webcamShape || 'circle';
-    const pipPos = options.webcamPosition || 'bottom-right';
-
-    function renderFrame() {
-      // Draw screen frame
-      ctx.drawImage(screenVideo, 0, 0, cWidth, cHeight);
-
-      // Calculate PiP coordinates
-      const margin = 28;
-      let px = cWidth - pipSize - margin;
-      let py = cHeight - pipSize - margin;
-
-      if (pipPos === 'bottom-left') {
-        px = margin;
-        py = cHeight - pipSize - margin;
-      } else if (pipPos === 'top-right') {
-        px = cWidth - pipSize - margin;
-        py = margin;
-      } else if (pipPos === 'top-left') {
-        px = margin;
-        py = margin;
-      }
-
-      ctx.save();
-      // Draw PiP shadow
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-      ctx.shadowBlur = 12;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 4;
-
-      if (pipShape === 'circle') {
-        const radius = pipSize / 2;
-        ctx.beginPath();
-        ctx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(webcamVideo, px, py, pipSize, pipSize);
-        ctx.restore();
-
-        // Glowing border
-        ctx.save();
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 3.5;
-        ctx.beginPath();
-        ctx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      } else {
-        // Rounded rectangle
-        ctx.beginPath();
-        ctx.roundRect(px, py, pipSize, Math.round(pipSize * 0.75), 14);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(webcamVideo, px, py, pipSize, Math.round(pipSize * 0.75));
-        ctx.restore();
-
-        ctx.save();
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 3.5;
-        ctx.beginPath();
-        ctx.roundRect(px, py, pipSize, Math.round(pipSize * 0.75), 14);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      renderLoopId = requestAnimationFrame(renderFrame);
-    }
-
-    renderFrame();
-    compositeStream = canvas.captureStream(fps);
-    finalVideoTrack = compositeStream.getVideoTracks()[0];
-  } else {
-    // Pure screen video track
-    finalVideoTrack = screenStream.getVideoTracks()[0];
-  }
+  // 6. Video Pipeline: Screen Area Cropping & Webcam PiP Compositing
+  const pipeline = setupVideoPipeline(screenVideoTrack, webcamStream, options);
+  const finalVideoTrack = pipeline.track;
+  videoPipelineCleanup = pipeline.cleanup;
 
   // 7. Combine Video + Mixed Audio
   const combinedStream = new MediaStream();
@@ -350,11 +243,11 @@ async function startRecording(streamId, options = {}) {
     }
   };
 
-  // Start recording with 1000ms timeslices for safety
+  // Start recording with 1000ms timeslices for stream integrity
   mediaRecorder.start(1000);
   recordingStartTime = Date.now();
 
-  // Start timer broadcast tick (every 1 sec)
+  // Timer broadcast tick (every 1 second)
   timerInterval = setInterval(() => {
     const elapsed = getElapsedSeconds();
     chrome.runtime.sendMessage({
@@ -371,6 +264,192 @@ async function startRecording(streamId, options = {}) {
   }).catch(() => {});
 
   return true;
+}
+
+/**
+ * Sets up Video Processing Pipeline:
+ * - Direct track passthrough when full screen without webcam (zero overhead)
+ * - Zero-copy WebCodecs VideoFrame visibleRect cropping when custom region selected
+ * - Canvas compositing when webcam PiP is requested
+ */
+function setupVideoPipeline(screenVideoTrack, webcamStream, options) {
+  const isCustomCrop =
+    options.recordingAreaMode === 'custom' &&
+    options.cropArea &&
+    options.cropArea.width > 0 &&
+    options.cropArea.height > 0;
+  const hasWebcam = Boolean(webcamStream && webcamStream.getVideoTracks().length > 0);
+
+  // If full screen without webcam: direct track passthrough (0% CPU, 60fps)
+  if (!isCustomCrop && !hasWebcam) {
+    return {
+      track: screenVideoTrack,
+      cleanup: () => {}
+    };
+  }
+
+  // Use MediaStreamTrackProcessor & MediaStreamTrackGenerator (Insertable Streams)
+  if (typeof MediaStreamTrackProcessor !== 'undefined' && typeof MediaStreamTrackGenerator !== 'undefined') {
+    try {
+      const processor = new MediaStreamTrackProcessor({ track: screenVideoTrack });
+      const generator = new MediaStreamTrackGenerator({ kind: 'video' });
+
+      let webcamVideo = null;
+      let offCanvas = null;
+      let offCtx = null;
+
+      if (hasWebcam) {
+        webcamVideo = document.getElementById('webcam-video');
+        if (webcamVideo) {
+          webcamVideo.srcObject = webcamStream;
+          webcamVideo.play().catch(() => {});
+        }
+        offCanvas = document.createElement('canvas');
+        offCtx = offCanvas.getContext('2d');
+      }
+
+      const cropArea = isCustomCrop ? options.cropArea : null;
+
+      const transformer = new TransformStream({
+        async transform(frame, controller) {
+          const codedW = frame.codedWidth;
+          const codedH = frame.codedHeight;
+
+          let sx = 0;
+          let sy = 0;
+          let sw = codedW;
+          let sh = codedH;
+
+          if (cropArea) {
+            const screenW = cropArea.screenWidth || codedW;
+            const screenH = cropArea.screenHeight || codedH;
+            const scaleX = codedW / screenW;
+            const scaleY = codedH / screenH;
+
+            // Enforce even dimensions (required by many video codecs)
+            sx = Math.max(0, Math.floor((cropArea.x * scaleX) / 2) * 2);
+            sy = Math.max(0, Math.floor((cropArea.y * scaleY) / 2) * 2);
+            sw = Math.max(64, Math.floor((cropArea.width * scaleX) / 2) * 2);
+            sh = Math.max(64, Math.floor((cropArea.height * scaleY) / 2) * 2);
+
+            if (sx + sw > codedW) sw = Math.floor((codedW - sx) / 2) * 2;
+            if (sy + sh > codedH) sh = Math.floor((codedH - sy) / 2) * 2;
+          }
+
+          if (hasWebcam && webcamVideo && webcamVideo.readyState >= 2 && offCtx) {
+            // Composite screen sub-region + Webcam PiP
+            if (offCanvas.width !== sw || offCanvas.height !== sh) {
+              offCanvas.width = sw;
+              offCanvas.height = sh;
+            }
+
+            // Draw screen frame (cropped or full)
+            offCtx.drawImage(frame, sx, sy, sw, sh, 0, 0, sw, sh);
+
+            // Calculate PiP dimensions and position
+            const pipSize = options.webcamSize || Math.round(sh * 0.25);
+            const pipShape = options.webcamShape || 'circle';
+            const pipPos = options.webcamPosition || 'bottom-right';
+            const margin = 24;
+
+            let px = sw - pipSize - margin;
+            let py = sh - pipSize - margin;
+            if (pipPos === 'bottom-left') {
+              px = margin;
+              py = sh - pipSize - margin;
+            } else if (pipPos === 'top-right') {
+              px = sw - pipSize - margin;
+              py = margin;
+            } else if (pipPos === 'top-left') {
+              px = margin;
+              py = margin;
+            }
+
+            offCtx.save();
+            offCtx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+            offCtx.shadowBlur = 10;
+
+            if (pipShape === 'circle') {
+              const radius = pipSize / 2;
+              offCtx.beginPath();
+              offCtx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
+              offCtx.closePath();
+              offCtx.clip();
+              offCtx.drawImage(webcamVideo, px, py, pipSize, pipSize);
+              offCtx.restore();
+
+              // Glowing border
+              offCtx.save();
+              offCtx.strokeStyle = '#38bdf8';
+              offCtx.lineWidth = 3;
+              offCtx.beginPath();
+              offCtx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
+              offCtx.stroke();
+              offCtx.restore();
+            } else {
+              const rectH = Math.round(pipSize * 0.75);
+              offCtx.beginPath();
+              offCtx.roundRect(px, py, pipSize, rectH, 12);
+              offCtx.closePath();
+              offCtx.clip();
+              offCtx.drawImage(webcamVideo, px, py, pipSize, rectH);
+              offCtx.restore();
+
+              offCtx.save();
+              offCtx.strokeStyle = '#38bdf8';
+              offCtx.lineWidth = 3;
+              offCtx.beginPath();
+              offCtx.roundRect(px, py, pipSize, rectH, 12);
+              offCtx.stroke();
+              offCtx.restore();
+            }
+
+            try {
+              const outFrame = new VideoFrame(offCanvas, { timestamp: frame.timestamp });
+              frame.close();
+              controller.enqueue(outFrame);
+            } catch (err) {
+              controller.enqueue(frame);
+            }
+          } else {
+            // Pure Region Crop - Zero-copy visibleRect in GPU memory
+            try {
+              const croppedFrame = new VideoFrame(frame, {
+                visibleRect: { x: sx, y: sy, width: sw, height: sh },
+                displayWidth: sw,
+                displayHeight: sh
+              });
+              frame.close();
+              controller.enqueue(croppedFrame);
+            } catch (err) {
+              controller.enqueue(frame);
+            }
+          }
+        }
+      });
+
+      processor.readable.pipeThrough(transformer).pipeTo(generator.writable).catch((e) => {
+        console.warn('Video pipeline stream closed:', e);
+      });
+
+      return {
+        track: generator,
+        cleanup: () => {
+          try {
+            generator.stop();
+          } catch (e) {}
+        }
+      };
+    } catch (pipelineErr) {
+      console.warn('Insertable streams setup failed, falling back to direct track:', pipelineErr);
+    }
+  }
+
+  // Graceful fallback to raw screen track
+  return {
+    track: screenVideoTrack,
+    cleanup: () => {}
+  };
 }
 
 function pauseRecording() {
@@ -422,11 +501,6 @@ async function stopRecording() {
     timerInterval = null;
   }
 
-  if (renderLoopId) {
-    cancelAnimationFrame(renderLoopId);
-    renderLoopId = null;
-  }
-
   const totalDurationSec = getElapsedSeconds();
   const totalDurationMs = totalDurationSec * 1000;
 
@@ -439,9 +513,27 @@ async function stopRecording() {
     mediaRecorder.onstop = async () => {
       try {
         const rawBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-        
+
         // Patch EBML duration so WebM is 100% seekable and duration is accurate
         const seekableBlob = await fixWebmDuration(rawBlob, totalDurationMs);
+
+        // Determine resolution for database metadata
+        let recWidth = 1920;
+        let recHeight = 1080;
+        if (
+          currentOptions.recordingAreaMode === 'custom' &&
+          currentOptions.cropArea &&
+          currentOptions.cropArea.width > 0
+        ) {
+          recWidth = currentOptions.cropArea.width;
+          recHeight = currentOptions.cropArea.height;
+        } else if (currentOptions.videoQuality === '4k') {
+          recWidth = 3840;
+          recHeight = 2160;
+        } else if (currentOptions.videoQuality === '720p') {
+          recWidth = 1280;
+          recHeight = 720;
+        }
 
         // Save into IndexedDB
         const recordingId = 'rec_' + Date.now();
@@ -451,8 +543,8 @@ async function stopRecording() {
           mimeType: seekableBlob.type,
           duration: totalDurationSec,
           fileSize: seekableBlob.size,
-          width: currentOptions.videoQuality === '4k' ? 3840 : (currentOptions.videoQuality === '720p' ? 1280 : 1920),
-          height: currentOptions.videoQuality === '4k' ? 2160 : (currentOptions.videoQuality === '720p' ? 720 : 1080),
+          width: recWidth,
+          height: recHeight,
           hasMic: !!currentOptions.micAudio,
           hasNoiseCancellation: !!currentOptions.noiseCancellation,
           preset: currentOptions.ncPreset || 'balanced',
@@ -481,6 +573,14 @@ async function stopRecording() {
 }
 
 function cleanupResources() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (videoPipelineCleanup) {
+    videoPipelineCleanup();
+    videoPipelineCleanup = null;
+  }
   if (screenStream) {
     screenStream.getTracks().forEach((t) => t.stop());
     screenStream = null;
@@ -492,10 +592,6 @@ function cleanupResources() {
   if (webcamStream) {
     webcamStream.getTracks().forEach((t) => t.stop());
     webcamStream = null;
-  }
-  if (compositeStream) {
-    compositeStream.getTracks().forEach((t) => t.stop());
-    compositeStream = null;
   }
   if (dspEngine) {
     dspEngine.close();

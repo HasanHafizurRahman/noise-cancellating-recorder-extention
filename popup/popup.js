@@ -45,6 +45,14 @@ const startRecordBtn = document.getElementById('start-record-btn');
 const libraryBtn = document.getElementById('library-btn');
 const settingsBtn = document.getElementById('settings-btn');
 
+// Area Selection DOM elements
+const areaModeButtons = document.querySelectorAll('.area-mode-btn');
+const customAreaCard = document.getElementById('custom-area-card');
+const selectedAreaLabel = document.getElementById('selected-area-label');
+const resetAreaBtn = document.getElementById('reset-area-btn');
+const selectAreaBtn = document.getElementById('select-area-btn');
+const aspectButtons = document.querySelectorAll('.aspect-btn');
+
 // Active view DOM
 const activeTimer = document.getElementById('active-timer');
 const activePulseDot = document.getElementById('active-pulse-dot');
@@ -133,6 +141,18 @@ function updateActiveTimer(seconds, isPaused, isMuted) {
 }
 
 function populateUIFromSettings(s) {
+  // Area mode selection
+  const areaMode = s.recordingAreaMode || 'full';
+  areaModeButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.mode === areaMode);
+  });
+  customAreaCard.classList.toggle('hidden', areaMode !== 'custom');
+  if (s.cropArea) {
+    selectedAreaLabel.textContent = `${Math.round(s.cropArea.width)} × ${Math.round(s.cropArea.height)} px`;
+  } else {
+    selectedAreaLabel.textContent = 'Full View (Click below to select)';
+  }
+
   micToggle.checked = s.micAudio;
   micDeviceContainer.style.display = s.micAudio ? 'block' : 'none';
 
@@ -214,6 +234,71 @@ function updateNcStatusDisplay(enabled) {
 }
 
 function setupEventListeners() {
+  // Area mode buttons
+  areaModeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      areaModeButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const mode = btn.dataset.mode;
+      currentSettings.recordingAreaMode = mode;
+      customAreaCard.classList.toggle('hidden', mode !== 'custom');
+      if (mode !== 'custom') {
+        currentSettings.cropArea = null;
+        saveSettings({ recordingAreaMode: mode, cropArea: null });
+      } else {
+        saveSettings({ recordingAreaMode: mode });
+      }
+    });
+  });
+
+  // Select area on screen button
+  selectAreaBtn.addEventListener('click', async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.id && !tab.url.startsWith('chrome://')) {
+        chrome.tabs.sendMessage(tab.id, { type: 'OPEN_AREA_SELECTOR' });
+        window.close(); // Close popup so user can drag on full page
+      } else {
+        alert('Please open a regular webpage tab to use the interactive area selector.');
+      }
+    } catch (err) {
+      console.warn('Could not launch area selector:', err);
+    }
+  });
+
+  // Reset area button
+  resetAreaBtn.addEventListener('click', () => {
+    currentSettings.cropArea = null;
+    selectedAreaLabel.textContent = 'Full View (Click below to select)';
+    saveSettings({ cropArea: null });
+  });
+
+  // Aspect ratio presets
+  aspectButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      aspectButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const ratio = btn.dataset.ratio; // '16:9', '4:3', '1:1', '9:16'
+      let w = 1280;
+      let h = 720;
+      if (ratio === '4:3') { w = 1024; h = 768; }
+      else if (ratio === '1:1') { w = 720; h = 720; }
+      else if (ratio === '9:16') { w = 720; h = 1280; }
+
+      const cropArea = {
+        x: Math.max(0, Math.round((window.screen.availWidth - w) / 2)),
+        y: Math.max(0, Math.round((window.screen.availHeight - h) / 2)),
+        width: w,
+        height: h,
+        screenWidth: window.screen.availWidth || 1920,
+        screenHeight: window.screen.availHeight || 1080
+      };
+      currentSettings.cropArea = cropArea;
+      selectedAreaLabel.textContent = `${w} × ${h} px (${ratio})`;
+      saveSettings({ cropArea });
+    });
+  });
+
   // Mic toggle
   micToggle.addEventListener('change', () => {
     currentSettings.micAudio = micToggle.checked;
@@ -399,6 +484,25 @@ function startCountdown(seconds, callback) {
 }
 
 async function executeStartRecording() {
+  // Pre-grant mic & webcam permissions on extension origin if needed
+  if (currentSettings.micAudio) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      console.warn('Mic permission check in popup:', e);
+    }
+  }
+
+  if (currentSettings.webcam) {
+    try {
+      const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      camStream.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      console.warn('Webcam permission check in popup:', e);
+    }
+  }
+
   chrome.runtime.sendMessage(
     {
       type: 'START_RECORDING_FLOW',
@@ -408,7 +512,13 @@ async function executeStartRecording() {
       if (res && res.success) {
         window.close(); // Close popup once desktop picker appears
       } else if (res && res.error) {
-        alert('Could not start recording: ' + res.error);
+        const isUserCancel =
+          res.error.includes('Permission denied') ||
+          res.error.includes('canceled') ||
+          res.error.includes('cancel');
+        if (!isUserCancel) {
+          alert('Could not start recording: ' + res.error);
+        }
       }
     }
   );

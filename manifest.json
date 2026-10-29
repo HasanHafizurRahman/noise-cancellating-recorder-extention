@@ -21,8 +21,7 @@
     }
   },
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "permissions": [
     "storage",
@@ -30,7 +29,9 @@
     "activeTab",
     "tabCapture",
     "desktopCapture",
-    "downloads"
+    "downloads",
+    "contextMenus",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -78,4 +79,3 @@
     }
   }
 }
-
