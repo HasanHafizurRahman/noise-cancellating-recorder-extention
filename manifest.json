@@ -1,0 +1,81 @@
+{
+  "manifest_version": 3,
+  "name": "CrispRec - Noise Cancellation Screen Recorder",
+  "version": "1.0.0",
+  "description": "HD screen & webcam recorder with real-time AI noise cancellation, microphone denoising, and instant studio preview.",
+  "author": "CrispRec Team",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "CrispRec: Screen Recorder",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "offscreen",
+    "activeTab",
+    "tabCapture",
+    "desktopCapture",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "audio/*",
+        "icons/*",
+        "preview/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "commands": {
+    "start-stop-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Start or Stop screen recording"
+    },
+    "pause-resume-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "Pause or Resume current recording"
+    },
+    "mute-unmute-mic": {
+      "suggested_key": {
+        "default": "Alt+Shift+M"
+      },
+      "description": "Mute or Unmute microphone"
+    }
+  }
+}
+

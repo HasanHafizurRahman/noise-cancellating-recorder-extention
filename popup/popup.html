@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrispRec: Screen Recorder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+        </div>
+        <div>
+          <h1 class="brand-title">CrispRec</h1>
+          <p class="brand-subtitle">AI Noise-Cancelling Recorder</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="library-btn" class="icon-btn" title="Recordings Library">
+          <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/></svg>
+        </button>
+        <button id="settings-btn" class="icon-btn" title="Settings">
+          <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ACTIVE RECORDING VIEW (Displayed when recording) -->
+    <div id="recording-view" class="view-panel hidden">
+      <div class="active-recording-card">
+        <div class="recording-badge-pulse">
+          <span class="pulse-dot" id="active-pulse-dot"></span>
+          <span id="active-status-text">RECORDING</span>
+        </div>
+        <div class="active-timer" id="active-timer">00:00</div>
+        <div class="nc-status-indicator">
+          <span class="indicator-icon">🛡️</span>
+          <span>AI Noise Cancellation Active</span>
+        </div>
+
+        <div class="active-controls">
+          <button id="active-pause-btn" class="ctrl-btn" title="Pause / Resume">
+            <svg id="active-pause-icon" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            <span id="active-pause-label">Pause</span>
+          </button>
+          <button id="active-mute-btn" class="ctrl-btn" title="Mute Microphone">
+            <svg id="active-mute-icon" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+            <span id="active-mute-label">Mute</span>
+          </button>
+          <button id="active-stop-btn" class="ctrl-btn stop-action" title="Stop & Save">
+            <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            <span>Stop & Save</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- IDLE SETUP VIEW -->
+    <div id="setup-view" class="view-panel">
+      <!-- Media Source Toggles -->
+      <section class="section">
+        <label class="section-label">Media & Audio Inputs</label>
+        
+        <!-- Microphone Toggle & Select -->
+        <div class="input-card">
+          <div class="input-header">
+            <div class="input-meta">
+              <span class="icon-badge">🎙️</span>
+              <div>
+                <div class="input-title">Microphone</div>
+                <div class="input-desc">Audio with AI noise suppression</div>
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="mic-toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div id="mic-device-container" class="device-select-wrap">
+            <select id="mic-device-select" class="select-dropdown"></select>
+          </div>
+        </div>
+
+        <!-- System Audio Toggle -->
+        <div class="input-card">
+          <div class="input-header">
+            <div class="input-meta">
+              <span class="icon-badge">🔊</span>
+              <div>
+                <div class="input-title">System Audio</div>
+                <div class="input-desc">Record tab or desktop audio</div>
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="system-audio-toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Webcam PiP Toggle -->
+        <div class="input-card">
+          <div class="input-header">
+            <div class="input-meta">
+              <span class="icon-badge">📹</span>
+              <div>
+                <div class="input-title">Webcam Overlay</div>
+                <div class="input-desc">Floating picture-in-picture bubble</div>
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="webcam-toggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div id="webcam-options-container" class="device-select-wrap hidden">
+            <select id="webcam-device-select" class="select-dropdown"></select>
+          </div>
+        </div>
+      </section>
+
+      <!-- AI Noise Cancellation Engine Card -->
+      <section class="section">
+        <div class="nc-card">
+          <div class="nc-header">
+            <div class="nc-brand">
+              <div class="nc-badge-glow">AI DSP</div>
+              <div>
+                <div class="nc-title">Voice Noise Cancellation</div>
+                <div class="nc-status" id="nc-status-tag">Real-Time Denoising ON</div>
+              </div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="nc-master-toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Presets -->
+          <div id="nc-controls-area">
+            <label class="sub-label">Noise Profile Presets</label>
+            <div class="preset-grid">
+              <button class="preset-btn active" data-preset="balanced">
+                <span class="preset-icon">🟢</span>
+                <span class="preset-name">Balanced</span>
+              </button>
+              <button class="preset-btn" data-preset="studio">
+                <span class="preset-icon">🎙️</span>
+                <span class="preset-name">Studio</span>
+              </button>
+              <button class="preset-btn" data-preset="aggressive">
+                <span class="preset-icon">🌪️</span>
+                <span class="preset-name">Fan Killer</span>
+              </button>
+              <button class="preset-btn" data-preset="custom">
+                <span class="preset-icon">🎛️</span>
+                <span class="preset-name">Pro DSP</span>
+              </button>
+            </div>
+
+            <!-- Custom DSP Sliders (Hidden by default, shown when Pro DSP selected) -->
+            <div id="custom-dsp-panel" class="custom-dsp hidden">
+              <div class="slider-row">
+                <div class="slider-info">
+                  <span>Gate Threshold</span>
+                  <span id="threshold-val">-45 dB</span>
+                </div>
+                <input type="range" id="threshold-slider" min="-70" max="-20" value="-45" step="1">
+              </div>
+              <div class="slider-row">
+                <div class="slider-info">
+                  <span>Noise Suppression Depth</span>
+                  <span id="suppression-val">-36 dB</span>
+                </div>
+                <input type="range" id="suppression-slider" min="-60" max="-12" value="-36" step="2">
+              </div>
+              <div class="slider-row">
+                <div class="slider-info">
+                  <span>Low-Cut Rumble Filter</span>
+                  <span id="lowcut-val">90 Hz</span>
+                </div>
+                <input type="range" id="lowcut-slider" min="40" max="250" value="90" step="5">
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Mic Spectrum & Test Section -->
+      <section class="section">
+        <div class="visualizer-card">
+          <div class="visualizer-header">
+            <span>Audio Visualizer</span>
+            <button id="test-mic-btn" class="test-btn">Test Mic</button>
+          </div>
+          <canvas id="mic-canvas" width="340" height="70"></canvas>
+        </div>
+      </section>
+
+      <!-- Quality and Countdown Settings Quick Bar -->
+      <div class="quick-settings-bar">
+        <div class="setting-pill">
+          <span>Quality:</span>
+          <select id="quality-select">
+            <option value="1080p">1080p (FHD)</option>
+            <option value="720p">720p (HD)</option>
+            <option value="4k">4K (UHD)</option>
+          </select>
+        </div>
+        <div class="setting-pill">
+          <span>FPS:</span>
+          <select id="fps-select">
+            <option value="60">60 FPS</option>
+            <option value="30">30 FPS</option>
+          </select>
+        </div>
+        <div class="setting-pill">
+          <span>Countdown:</span>
+          <select id="countdown-select">
+            <option value="3">3s</option>
+            <option value="0">Off</option>
+            <option value="5">5s</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Action Button -->
+      <button id="start-record-btn" class="start-btn">
+        <span class="btn-glow"></span>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="#ffffff"/></svg>
+        <span>Start Recording</span>
+      </button>
+
+      <!-- Shortcut Tip -->
+      <div class="shortcut-tip">
+        <span>Shortcut:</span> <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
+

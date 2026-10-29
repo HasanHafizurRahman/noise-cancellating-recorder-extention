@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrispRec Settings & Audio Preferences</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="settings-container">
+    <!-- Header -->
+    <header class="settings-header">
+      <div class="brand">
+        <div class="brand-badge">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+        </div>
+        <div>
+          <h1>CrispRec Settings</h1>
+          <p>Audio DSP, Video Quality, and Recording Controls</p>
+        </div>
+      </div>
+      <div class="header-status" id="save-status">Settings saved automatically</div>
+    </header>
+
+    <div class="settings-grid">
+      <!-- Section 1: Noise Cancellation & Audio DSP -->
+      <section class="card">
+        <div class="card-title-wrap">
+          <span class="card-icon">🛡️</span>
+          <div>
+            <h2>AI Noise Cancellation Engine</h2>
+            <p>Real-time digital signal processing for studio voice isolation</p>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Default Noise Profile</span>
+            <span class="item-desc">Automatic DSP curve applied to microphone audio</span>
+          </div>
+          <select id="opt-nc-preset" class="select-box">
+            <option value="balanced">Balanced Voice (Standard)</option>
+            <option value="studio">Studio Podcast (Rich Warmth)</option>
+            <option value="aggressive">Fan & HVAC Killer (High Noise)</option>
+            <option value="custom">Custom Pro DSP</option>
+          </select>
+        </div>
+
+        <!-- Custom DSP Fine-Tuning -->
+        <div class="dsp-tuning-box">
+          <div class="slider-row">
+            <div class="slider-label">
+              <span>Noise Gate Threshold</span>
+              <span id="opt-threshold-label">-45 dB</span>
+            </div>
+            <input type="range" id="opt-threshold" min="-70" max="-20" value="-45" step="1">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-label">
+              <span>Noise Suppression Attenuation</span>
+              <span id="opt-suppression-label">-36 dB</span>
+            </div>
+            <input type="range" id="opt-suppression" min="-60" max="-12" value="-36" step="2">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-label">
+              <span>Low-Cut Rumble Filter (Highpass)</span>
+              <span id="opt-lowcut-label">90 Hz</span>
+            </div>
+            <input type="range" id="opt-lowcut" min="40" max="250" value="90" step="5">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-label">
+              <span>High-Cut Air Filter (Lowpass)</span>
+              <span id="opt-highcut-label">12000 Hz</span>
+            </div>
+            <input type="range" id="opt-highcut" min="5000" max="18000" value="12000" step="500">
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-label">
+              <span>Vocal Presence Enhancer</span>
+              <span id="opt-presence-label">+3.0 dB</span>
+            </div>
+            <input type="range" id="opt-presence" min="0" max="6" value="3.0" step="0.5">
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Broadcast Dynamics Compressor</span>
+            <span class="item-desc">Evens out vocal dynamics and prevents audio clipping</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="opt-compressor" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Section 2: Video & Screen Capture -->
+      <section class="card">
+        <div class="card-title-wrap">
+          <span class="card-icon">🖥️</span>
+          <div>
+            <h2>Video & Screen Capture</h2>
+            <p>Resolution, framerate, and video encoding parameters</p>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Recording Resolution</span>
+            <span class="item-desc">Maximum output canvas dimension</span>
+          </div>
+          <select id="opt-quality" class="select-box">
+            <option value="1080p">1080p Full HD (1920x1080)</option>
+            <option value="720p">720p HD (1280x720)</option>
+            <option value="4k">4K Ultra HD (3840x2160)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Frame Rate</span>
+            <span class="item-desc">Smooth 60 FPS for fluid motion or 30 FPS for lower file sizes</span>
+          </div>
+          <select id="opt-fps" class="select-box">
+            <option value="60">60 FPS (Ultra Smooth)</option>
+            <option value="30">30 FPS (Standard)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Video Bitrate</span>
+            <span class="item-desc">Higher bitrates deliver sharper text and screen graphics</span>
+          </div>
+          <select id="opt-bitrate" class="select-box">
+            <option value="8000000">8.0 Mbps (Pro Quality)</option>
+            <option value="4500000" selected>4.5 Mbps (Balanced)</option>
+            <option value="2500000">2.5 Mbps (Economy)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Countdown Timer</span>
+            <span class="item-desc">Seconds before capture starts</span>
+          </div>
+          <select id="opt-countdown" class="select-box">
+            <option value="3">3 Seconds</option>
+            <option value="0">None (Instant)</option>
+            <option value="5">5 Seconds</option>
+            <option value="10">10 Seconds</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Floating In-Page Recording Toolbar</span>
+            <span class="item-desc">Show draggable control pill with timer and pause button</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="opt-floating" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Section 3: Webcam Picture-in-Picture -->
+      <section class="card">
+        <div class="card-title-wrap">
+          <span class="card-icon">📹</span>
+          <div>
+            <h2>Webcam Picture-in-Picture (PiP)</h2>
+            <p>Customize position and shape for camera overlay</p>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Overlay Shape</span>
+            <span class="item-desc">Circular avatar style or rounded rectangle</span>
+          </div>
+          <select id="opt-webcam-shape" class="select-box">
+            <option value="circle">Circular Avatar</option>
+            <option value="rounded">Rounded Rectangle</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Screen Corner</span>
+            <span class="item-desc">Anchor position on screen recording</span>
+          </div>
+          <select id="opt-webcam-pos" class="select-box">
+            <option value="bottom-right">Bottom Right</option>
+            <option value="bottom-left">Bottom Left</option>
+            <option value="top-right">Top Right</option>
+            <option value="top-left">Top Left</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="item-info">
+            <span class="item-title">Webcam Bubble Size</span>
+            <span class="item-desc">Dimensions of camera video</span>
+          </div>
+          <select id="opt-webcam-size" class="select-box">
+            <option value="180">Small (180px)</option>
+            <option value="220" selected>Medium (220px)</option>
+            <option value="280">Large (280px)</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Section 4: Keyboard Shortcuts & Storage Management -->
+      <section class="card">
+        <div class="card-title-wrap">
+          <span class="card-icon">⌨️</span>
+          <div>
+            <h2>Shortcuts & Storage</h2>
+            <p>Global hotkeys and local IndexedDB management</p>
+          </div>
+        </div>
+
+        <div class="shortcuts-list">
+          <div class="shortcut-row">
+            <span>Start / Stop Recording:</span>
+            <div><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span>Pause / Resume:</span>
+            <div><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd></div>
+          </div>
+          <div class="shortcut-row">
+            <span>Mute / Unmute Mic:</span>
+            <div><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd></div>
+          </div>
+        </div>
+
+        <div class="storage-info-wrap">
+          <div class="item-info">
+            <span class="item-title">Storage Used</span>
+            <span class="item-desc" id="storage-detail">Loading usage...</span>
+          </div>
+          <div class="danger-btns">
+            <button id="clear-storage-btn" class="danger-outline-btn">Clear All Recordings</button>
+            <button id="reset-defaults-btn" class="secondary-btn">Reset Defaults</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
+

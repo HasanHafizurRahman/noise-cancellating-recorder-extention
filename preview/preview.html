@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrispRec - Recording Studio</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <div class="studio-layout">
+    <!-- Top Navbar -->
+    <header class="navbar">
+      <div class="nav-brand">
+        <div class="brand-badge">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+        </div>
+        <div>
+          <h1 class="nav-title">CrispRec Studio</h1>
+          <p class="nav-tagline">AI Denoised Screen Recording</p>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <button id="toggle-library-btn" class="secondary-btn">
+          <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/></svg>
+          <span>Library (<span id="library-count">0</span>)</span>
+        </button>
+        <button id="download-webm-btn" class="primary-btn">
+          <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>
+          <span>Download Video (.webm)</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="studio-content">
+      <!-- Left: Video Player Stage -->
+      <section class="player-stage">
+        <div class="video-container" id="video-wrapper">
+          <video id="player" playsinline preload="auto"></video>
+          
+          <!-- Custom Video Controls Overlay -->
+          <div class="video-controls">
+            <div class="progress-bar-wrap" id="progress-wrap">
+              <div class="progress-bar-fill" id="progress-fill"></div>
+              <div class="progress-scrubber" id="scrubber"></div>
+            </div>
+
+            <div class="controls-bottom">
+              <div class="controls-left">
+                <button id="play-pause-btn" class="control-btn" title="Play / Pause (Space)">
+                  <svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <button id="skip-back-btn" class="control-btn" title="Back 5s">
+                  <svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+                </button>
+                <button id="skip-fwd-btn" class="control-btn" title="Forward 5s">
+                  <svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+                </button>
+                <div class="time-display">
+                  <span id="current-time">00:00</span> / <span id="total-duration">00:00</span>
+                </div>
+              </div>
+
+              <div class="controls-right">
+                <div class="speed-control">
+                  <button id="speed-btn" class="control-btn text-btn">1.0x</button>
+                  <div id="speed-menu" class="dropdown-menu hidden">
+                    <div class="dropdown-item" data-speed="0.5">0.5x</div>
+                    <div class="dropdown-item" data-speed="0.75">0.75x</div>
+                    <div class="dropdown-item active" data-speed="1.0">1.0x (Normal)</div>
+                    <div class="dropdown-item" data-speed="1.25">1.25x</div>
+                    <div class="dropdown-item" data-speed="1.5">1.5x</div>
+                    <div class="dropdown-item" data-speed="2.0">2.0x</div>
+                  </div>
+                </div>
+
+                <div class="volume-control">
+                  <button id="mute-btn" class="control-btn">
+                    <svg id="vol-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                  </button>
+                  <input type="range" id="vol-slider" min="0" max="1" step="0.05" value="1">
+                </div>
+
+                <button id="fullscreen-btn" class="control-btn" title="Fullscreen">
+                  <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Inspector & Details Sidebar -->
+      <aside class="studio-sidebar">
+        <!-- Title & Metadata Card -->
+        <div class="sidebar-card">
+          <div class="card-header">
+            <span class="card-title">Recording Details</span>
+          </div>
+          
+          <div class="editable-title-wrap">
+            <input type="text" id="recording-title-input" class="title-input" placeholder="Recording title">
+            <button id="save-title-btn" class="save-title-btn" title="Rename recording">Save</button>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Duration</span>
+              <span class="meta-val" id="meta-duration">--:--</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">File Size</span>
+              <span class="meta-val" id="meta-size">-- MB</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Resolution</span>
+              <span class="meta-val" id="meta-res">1920 x 1080</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Noise Cancellation</span>
+              <span class="meta-badge" id="meta-nc">🛡️ Balanced AI</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export & Audio Extraction Card -->
+        <div class="sidebar-card">
+          <div class="card-header">
+            <span class="card-title">Export Options</span>
+          </div>
+
+          <div class="export-actions-list">
+            <button id="export-audio-wav-btn" class="export-btn">
+              <div class="export-btn-icon">🎵</div>
+              <div class="export-btn-meta">
+                <span class="export-btn-title">Export Denoised Audio</span>
+                <span class="export-btn-desc">Audio only (WAV) - ideal for podcasting</span>
+              </div>
+            </button>
+
+            <button id="copy-video-btn" class="export-btn">
+              <div class="export-btn-icon">📋</div>
+              <div class="export-btn-meta">
+                <span class="export-btn-title">Copy Video to Clipboard</span>
+                <span class="export-btn-desc">Ready to paste into Discord, Slack, etc.</span>
+              </div>
+            </button>
+
+            <button id="delete-recording-btn" class="export-btn danger">
+              <div class="export-btn-icon">🗑️</div>
+              <div class="export-btn-meta">
+                <span class="export-btn-title">Delete Recording</span>
+                <span class="export-btn-desc">Permanently remove from local storage</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Recordings Library Drawer (Modal/Slide-over) -->
+    <div id="library-drawer" class="library-drawer hidden">
+      <div class="drawer-header">
+        <div class="drawer-title-wrap">
+          <h2>Recordings Library</h2>
+          <span class="drawer-subtitle" id="storage-usage-text">0 recordings • 0 MB</span>
+        </div>
+        <button id="close-library-btn" class="close-btn">&times;</button>
+      </div>
+
+      <div class="library-grid" id="library-items-container">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="preview.js"></script>
+</body>
+</html>
+
