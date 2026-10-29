@@ -77,8 +77,8 @@ async function loadRecording(id) {
     }
   }
 
-  if (!rec) {
-    showEmptyStudio();
+  if (!rec || !rec.blob || rec.blob.size === 0) {
+    showEmptyStudio(rec && rec.blob && rec.blob.size === 0 ? 'Empty Recording (0 MB)' : 'No Recordings Found');
     return;
   }
 
@@ -108,8 +108,8 @@ async function loadRecording(id) {
   totalDurationEl.textContent = formatTime(rec.duration || 0);
 }
 
-function showEmptyStudio() {
-  titleInput.value = 'No Recordings Found';
+function showEmptyStudio(message = 'No Recordings Found') {
+  titleInput.value = message;
   titleInput.disabled = true;
   saveTitleBtn.disabled = true;
   downloadWebmBtn.disabled = true;
@@ -292,8 +292,13 @@ function setupEventListeners() {
 }
 
 function togglePlayPause() {
+  if (!player.src || !currentRecording || !currentRecording.blob || currentRecording.blob.size === 0) {
+    return;
+  }
   if (player.paused) {
-    player.play();
+    player.play().catch((err) => {
+      console.warn('Video playback warning:', err);
+    });
   } else {
     player.pause();
   }

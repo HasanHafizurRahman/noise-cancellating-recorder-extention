@@ -345,6 +345,26 @@ body::-webkit-scrollbar-thumb {
   color: var(--text-muted);
 }
 
+.mic-perm-banner {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.mic-perm-banner a {
+  color: #38bdf8;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
 .device-select-wrap {
   width: 100%;
 }

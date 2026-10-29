@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CrispRec - Enable Microphone Access</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background: #090d16;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 20px;
+      padding: 40px 32px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 40px rgba(56, 189, 248, 0.1);
+    }
+    .icon-wrap {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.1));
+      border: 2px solid #38bdf8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.35);
+      position: relative;
+    }
+    .icon-wrap svg {
+      width: 40px;
+      height: 40px;
+      fill: #38bdf8;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #ffffff;
+    }
+    p {
+      font-size: 14px;
+      color: #94a3b8;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+    .btn-allow {
+      width: 100%;
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      color: #ffffff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 20px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-allow:hover {
+      background: linear-gradient(135deg, #0369a1, #0284c7);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(2, 132, 199, 0.6);
+    }
+    .btn-allow:active {
+      transform: translateY(1px);
+    }
+    .status-msg {
+      margin-top: 16px;
+      font-size: 13px;
+      min-height: 20px;
+    }
+    .status-success {
+      color: #34d399;
+      font-weight: 600;
+    }
+    .status-error {
+      color: #f87171;
+    }
+    .footer-note {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .skip-btn {
+      background: transparent;
+      border: none;
+      color: #64748b;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 14px;
+      text-decoration: underline;
+    }
+    .skip-btn:hover {
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrap">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+      </svg>
+    </div>
+
+    <h1>Enable Microphone for CrispRec</h1>
+    <p>
+      Chrome requires you to allow microphone access once in a tab so CrispRec can capture your voice with real-time AI noise cancellation.
+    </p>
+
+    <button id="allow-btn" class="btn-allow">
+      <span>🎙️ Allow Microphone Access</span>
+    </button>
+
+    <div id="status-msg" class="status-msg"></div>
+
+    <button id="skip-btn" class="skip-btn">Skip for now (Record screen without mic)</button>
+
+    <div class="footer-note">
+      🔒 100% private. Audio is processed completely on your computer and never sent to cloud servers.
+    </div>
+  </div>
+
+  <script src="permission.js"></script>
+</body>
+</html>
+

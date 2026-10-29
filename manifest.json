@@ -53,7 +53,8 @@
       "resources": [
         "audio/*",
         "icons/*",
-        "preview/*"
+        "preview/*",
+        "permission/*"
       ],
       "matches": ["<all_urls>"]
     }

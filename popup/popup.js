@@ -15,6 +15,8 @@ const recordingView = document.getElementById('recording-view');
 const micToggle = document.getElementById('mic-toggle');
 const micDeviceSelect = document.getElementById('mic-device-select');
 const micDeviceContainer = document.getElementById('mic-device-container');
+const micPermBanner = document.getElementById('mic-perm-banner');
+const grantMicLink = document.getElementById('grant-mic-link');
 
 const systemAudioToggle = document.getElementById('system-audio-toggle');
 const webcamToggle = document.getElementById('webcam-toggle');
@@ -81,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateUIFromSettings(currentSettings);
   await enumerateMediaDevices();
   setupEventListeners();
+  await updateMicPermissionUI();
 
   // Listen for background timer updates
   chrome.runtime.onMessage.addListener((message) => {
@@ -304,7 +307,15 @@ function setupEventListeners() {
     currentSettings.micAudio = micToggle.checked;
     micDeviceContainer.style.display = micToggle.checked ? 'block' : 'none';
     saveSettings({ micAudio: micToggle.checked });
+    updateMicPermissionUI();
   });
+
+  if (grantMicLink) {
+    grantMicLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: chrome.runtime.getURL('permission/permission.html') });
+    });
+  }
 
   micDeviceSelect.addEventListener('change', () => {
     currentSettings.micDeviceId = micDeviceSelect.value;
@@ -413,10 +424,15 @@ function setupEventListeners() {
   });
 
   // Test Mic Button
-  testMicBtn.addEventListener('click', () => {
+  testMicBtn.addEventListener('click', async () => {
     if (isTestingMic) {
       stopMicTest();
     } else {
+      const state = await getMicPermissionState();
+      if (state !== 'granted') {
+        chrome.tabs.create({ url: chrome.runtime.getURL('permission/permission.html') });
+        return;
+      }
       startMicTest();
     }
   });
@@ -424,8 +440,16 @@ function setupEventListeners() {
   // Start Recording Button
   startRecordBtn.addEventListener('click', async () => {
     stopMicTest(); // Stop test if running
-    const countdownSec = currentSettings.countdown || 0;
 
+    if (currentSettings.micAudio) {
+      const state = await getMicPermissionState();
+      if (state !== 'granted') {
+        chrome.tabs.create({ url: chrome.runtime.getURL('permission/permission.html') });
+        return;
+      }
+    }
+
+    const countdownSec = currentSettings.countdown || 0;
     if (countdownSec > 0) {
       startCountdown(countdownSec, () => executeStartRecording());
     } else {
@@ -461,6 +485,29 @@ function setupEventListeners() {
   });
 }
 
+async function getMicPermissionState() {
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const res = await navigator.permissions.query({ name: 'microphone' });
+      return res.state; // 'granted', 'prompt', 'denied'
+    }
+  } catch (e) {}
+  return 'prompt';
+}
+
+async function updateMicPermissionUI() {
+  if (!currentSettings.micAudio) {
+    if (micPermBanner) micPermBanner.classList.add('hidden');
+    return;
+  }
+  const state = await getMicPermissionState();
+  if (state !== 'granted') {
+    if (micPermBanner) micPermBanner.classList.remove('hidden');
+  } else {
+    if (micPermBanner) micPermBanner.classList.add('hidden');
+  }
+}
+
 function startCountdown(seconds, callback) {
   let count = seconds;
   startRecordBtn.disabled = true;
@@ -484,25 +531,6 @@ function startCountdown(seconds, callback) {
 }
 
 async function executeStartRecording() {
-  // Pre-grant mic & webcam permissions on extension origin if needed
-  if (currentSettings.micAudio) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-    } catch (e) {
-      console.warn('Mic permission check in popup:', e);
-    }
-  }
-
-  if (currentSettings.webcam) {
-    try {
-      const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      camStream.getTracks().forEach((t) => t.stop());
-    } catch (e) {
-      console.warn('Webcam permission check in popup:', e);
-    }
-  }
-
   chrome.runtime.sendMessage(
     {
       type: 'START_RECORDING_FLOW',
@@ -559,8 +587,8 @@ async function startMicTest() {
     testMicBtn.textContent = 'Stop Test';
     testMicBtn.classList.add('active');
   } catch (err) {
-    console.error('Failed to start mic test:', err);
-    alert('Please allow microphone permissions to test audio: ' + err.message);
+    console.warn('Failed to start mic test:', err);
+    chrome.tabs.create({ url: chrome.runtime.getURL('permission/permission.html') });
   }
 }
 

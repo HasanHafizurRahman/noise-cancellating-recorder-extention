@@ -37,6 +37,15 @@ export class DspAudioEngine {
    * Initialize audio context and DSP nodes
    */
   async init(micStream = null, systemStream = null, options = {}) {
+    const hasMicAudio = Boolean(micStream && micStream.getAudioTracks().length > 0);
+    const hasSystemAudio = Boolean(systemStream && systemStream.getAudioTracks().length > 0);
+
+    // If neither microphone nor system audio is available, return null
+    if (!hasMicAudio && !hasSystemAudio) {
+      console.log('DspAudioEngine: No audio inputs available, returning null stream.');
+      return null;
+    }
+
     // 48000 Hz is standard professional broadcast sample rate
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     this.audioCtx = new AudioContextClass({
@@ -44,14 +53,28 @@ export class DspAudioEngine {
       latencyHint: 'interactive'
     });
 
-    if (this.audioCtx.state === 'suspended') {
-      await this.audioCtx.resume();
+    try {
+      if (this.audioCtx.state === 'suspended') {
+        await this.audioCtx.resume();
+      }
+    } catch (e) {
+      console.warn('AudioContext resume warning:', e);
     }
 
     this.mixedDestination = this.audioCtx.createMediaStreamDestination();
     this.analyserNode = this.audioCtx.createAnalyser();
     this.analyserNode.fftSize = 256;
     this.analyserNode.smoothingTimeConstant = 0.8;
+
+    // Keep-alive silence source: guarantees continuous audio timestamps to prevent MediaRecorder starvation
+    try {
+      this.keepAliveNode = this.audioCtx.createConstantSource();
+      this.keepAliveNode.offset.value = 0;
+      this.keepAliveNode.connect(this.mixedDestination);
+      this.keepAliveNode.start();
+    } catch (e) {
+      console.warn('Keep-alive node warning:', e);
+    }
 
     // Load AudioWorklet module
     let workletLoaded = false;
@@ -305,6 +328,13 @@ export class DspAudioEngine {
    * Close all audio tracks and context
    */
   async close() {
+    if (this.keepAliveNode) {
+      try {
+        this.keepAliveNode.stop();
+        this.keepAliveNode.disconnect();
+      } catch (e) {}
+      this.keepAliveNode = null;
+    }
     if (this.audioCtx && this.audioCtx.state !== 'closed') {
       try {
         await this.audioCtx.close();

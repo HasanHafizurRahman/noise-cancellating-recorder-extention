@@ -155,8 +155,9 @@ async function startRecording(options = {}) {
       }
 
       micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      console.log('Microphone acquired successfully in offscreen');
     } catch (micErr) {
-      console.warn('Microphone capture failed or denied in offscreen:', micErr);
+      console.warn('Microphone capture not available or denied in offscreen:', micErr.name);
       micStream = null;
     }
   }
@@ -176,31 +177,45 @@ async function startRecording(options = {}) {
 
       webcamStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
     } catch (camErr) {
-      console.warn('Webcam access failed or denied in offscreen:', camErr);
+      console.warn('Webcam access failed or denied in offscreen:', camErr.name);
       webcamStream = null;
     }
   }
 
   // 5. Initialize DSP Audio Engine (Noise Cancellation & Mixing)
-  dspEngine = new DspAudioEngine();
-  const mixedAudioStream = await dspEngine.init(micStream, screenStream, {
-    noiseCancellation: options.noiseCancellation !== false,
-    ncPreset: options.ncPreset || 'balanced',
-    lowCutFreq: options.lowCutFreq,
-    highCutFreq: options.highCutFreq,
-    presenceGain: options.presenceGain,
-    thresholdDb: options.thresholdDb,
-    suppressionDb: options.suppressionDb,
-    attackMs: options.attackMs,
-    releaseMs: options.releaseMs
-  });
+  const hasMic = Boolean(micStream && micStream.getAudioTracks().length > 0);
+  const hasSystemAudio = Boolean(screenStream && screenStream.getAudioTracks().length > 0);
+  const hasAnyAudio = hasMic || hasSystemAudio;
+
+  let mixedAudioStream = null;
+  if (hasAnyAudio) {
+    try {
+      dspEngine = new DspAudioEngine();
+      mixedAudioStream = await dspEngine.init(micStream, screenStream, {
+        noiseCancellation: options.noiseCancellation !== false,
+        ncPreset: options.ncPreset || 'balanced',
+        lowCutFreq: options.lowCutFreq,
+        highCutFreq: options.highCutFreq,
+        presenceGain: options.presenceGain,
+        thresholdDb: options.thresholdDb,
+        suppressionDb: options.suppressionDb,
+        attackMs: options.attackMs,
+        releaseMs: options.releaseMs
+      });
+    } catch (dspErr) {
+      console.warn('DSP audio init warning, recording without DSP:', dspErr);
+      mixedAudioStream = null;
+    }
+  } else {
+    console.log('No audio source active. Recording high-definition video only.');
+  }
 
   // 6. Video Pipeline: Screen Area Cropping & Webcam PiP Compositing
   const pipeline = setupVideoPipeline(screenVideoTrack, webcamStream, options);
   const finalVideoTrack = pipeline.track;
   videoPipelineCleanup = pipeline.cleanup;
 
-  // 7. Combine Video + Mixed Audio
+  // 7. Combine Video + Mixed Audio (ONLY add audio track if active audio exists!)
   const combinedStream = new MediaStream();
   if (finalVideoTrack) {
     combinedStream.addTrack(finalVideoTrack);
@@ -211,11 +226,18 @@ async function startRecording(options = {}) {
   }
 
   // 8. Select optimal MediaRecorder MIME type
-  const mimeTypes = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm'
-  ];
+  const hasAudioTrack = combinedStream.getAudioTracks().length > 0;
+  const mimeTypes = hasAudioTrack
+    ? [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ]
+    : [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm'
+      ];
 
   let chosenMime = 'video/webm';
   for (const m of mimeTypes) {
@@ -240,6 +262,7 @@ async function startRecording(options = {}) {
   mediaRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) {
       recordedChunks.push(e.data);
+      console.log(`Chunk ${recordedChunks.length} captured: ${e.data.size} bytes`);
     }
   };
 
@@ -268,9 +291,8 @@ async function startRecording(options = {}) {
 
 /**
  * Sets up Video Processing Pipeline:
- * - Direct track passthrough when full screen without webcam (zero overhead)
- * - Zero-copy WebCodecs VideoFrame visibleRect cropping when custom region selected
- * - Canvas compositing when webcam PiP is requested
+ * - Direct track passthrough when full screen without webcam (100% native hardware accelerated)
+ * - Hardware canvas stream when custom region selected or webcam PiP active
  */
 function setupVideoPipeline(screenVideoTrack, webcamStream, options) {
   const isCustomCrop =
@@ -288,167 +310,179 @@ function setupVideoPipeline(screenVideoTrack, webcamStream, options) {
     };
   }
 
-  // Use MediaStreamTrackProcessor & MediaStreamTrackGenerator (Insertable Streams)
-  if (typeof MediaStreamTrackProcessor !== 'undefined' && typeof MediaStreamTrackGenerator !== 'undefined') {
-    try {
-      const processor = new MediaStreamTrackProcessor({ track: screenVideoTrack });
-      const generator = new MediaStreamTrackGenerator({ kind: 'video' });
+  const fps = options.frameRate || 60;
+  const canvas = document.getElementById('composite-canvas') || document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: false });
 
-      let webcamVideo = null;
-      let offCanvas = null;
-      let offCtx = null;
+  const screenVideo = document.getElementById('screen-video');
+  const webcamVideo = document.getElementById('webcam-video');
 
-      if (hasWebcam) {
-        webcamVideo = document.getElementById('webcam-video');
-        if (webcamVideo) {
-          webcamVideo.srcObject = webcamStream;
-          webcamVideo.play().catch(() => {});
-        }
-        offCanvas = document.createElement('canvas');
-        offCtx = offCanvas.getContext('2d');
+  if (screenVideo) {
+    screenVideo.srcObject = new MediaStream([screenVideoTrack]);
+    screenVideo.play().catch(() => {});
+  }
+
+  if (hasWebcam && webcamVideo) {
+    webcamVideo.srcObject = webcamStream;
+    webcamVideo.play().catch(() => {});
+  }
+
+  const cropArea = isCustomCrop ? options.cropArea : null;
+  const trackSettings = screenVideoTrack.getSettings ? screenVideoTrack.getSettings() : {};
+  let outWidth = trackSettings.width || 1920;
+  let outHeight = trackSettings.height || 1080;
+
+  if (cropArea) {
+    outWidth = Math.max(64, Math.floor(cropArea.width / 2) * 2);
+    outHeight = Math.max(64, Math.floor(cropArea.height / 2) * 2);
+  }
+
+  canvas.width = outWidth;
+  canvas.height = outHeight;
+
+  // Pre-fill initial background so canvas stream has immediate pixels
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  let isRunning = true;
+  let processorReader = null;
+  let timerId = null;
+
+  function render(source) {
+    if (!isRunning) return;
+    const codedW = source.codedWidth || source.videoWidth || canvas.width;
+    const codedH = source.codedHeight || source.videoHeight || canvas.height;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = codedW;
+    let sh = codedH;
+
+    if (cropArea) {
+      const screenW = cropArea.screenWidth || codedW;
+      const screenH = cropArea.screenHeight || codedH;
+      const scaleX = codedW / screenW;
+      const scaleY = codedH / screenH;
+
+      sx = Math.max(0, Math.floor((cropArea.x * scaleX) / 2) * 2);
+      sy = Math.max(0, Math.floor((cropArea.y * scaleY) / 2) * 2);
+      sw = Math.max(64, Math.floor((cropArea.width * scaleX) / 2) * 2);
+      sh = Math.max(64, Math.floor((cropArea.height * scaleY) / 2) * 2);
+
+      if (sx + sw > codedW) sw = Math.floor((codedW - sx) / 2) * 2;
+      if (sy + sh > codedH) sh = Math.floor((codedH - sy) / 2) * 2;
+    }
+
+    if (canvas.width !== sw || canvas.height !== sh) {
+      canvas.width = sw;
+      canvas.height = sh;
+    }
+
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    if (hasWebcam && webcamVideo && webcamVideo.readyState >= 2) {
+      const pipSize = options.webcamSize || Math.round(sh * 0.25);
+      const pipShape = options.webcamShape || 'circle';
+      const pipPos = options.webcamPosition || 'bottom-right';
+      const margin = 24;
+
+      let px = sw - pipSize - margin;
+      let py = sh - pipSize - margin;
+      if (pipPos === 'bottom-left') {
+        px = margin;
+        py = sh - pipSize - margin;
+      } else if (pipPos === 'top-right') {
+        px = sw - pipSize - margin;
+        py = margin;
+      } else if (pipPos === 'top-left') {
+        px = margin;
+        py = margin;
       }
 
-      const cropArea = isCustomCrop ? options.cropArea : null;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+      ctx.shadowBlur = 10;
 
-      const transformer = new TransformStream({
-        async transform(frame, controller) {
-          const codedW = frame.codedWidth;
-          const codedH = frame.codedHeight;
+      if (pipShape === 'circle') {
+        const radius = pipSize / 2;
+        ctx.beginPath();
+        ctx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(webcamVideo, px, py, pipSize, pipSize);
+        ctx.restore();
 
-          let sx = 0;
-          let sy = 0;
-          let sw = codedW;
-          let sh = codedH;
+        // Glowing border
+        ctx.save();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        const rectH = Math.round(pipSize * 0.75);
+        ctx.beginPath();
+        ctx.roundRect(px, py, pipSize, rectH, 12);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(webcamVideo, px, py, pipSize, rectH);
+        ctx.restore();
 
-          if (cropArea) {
-            const screenW = cropArea.screenWidth || codedW;
-            const screenH = cropArea.screenHeight || codedH;
-            const scaleX = codedW / screenW;
-            const scaleY = codedH / screenH;
-
-            // Enforce even dimensions (required by many video codecs)
-            sx = Math.max(0, Math.floor((cropArea.x * scaleX) / 2) * 2);
-            sy = Math.max(0, Math.floor((cropArea.y * scaleY) / 2) * 2);
-            sw = Math.max(64, Math.floor((cropArea.width * scaleX) / 2) * 2);
-            sh = Math.max(64, Math.floor((cropArea.height * scaleY) / 2) * 2);
-
-            if (sx + sw > codedW) sw = Math.floor((codedW - sx) / 2) * 2;
-            if (sy + sh > codedH) sh = Math.floor((codedH - sy) / 2) * 2;
-          }
-
-          if (hasWebcam && webcamVideo && webcamVideo.readyState >= 2 && offCtx) {
-            // Composite screen sub-region + Webcam PiP
-            if (offCanvas.width !== sw || offCanvas.height !== sh) {
-              offCanvas.width = sw;
-              offCanvas.height = sh;
-            }
-
-            // Draw screen frame (cropped or full)
-            offCtx.drawImage(frame, sx, sy, sw, sh, 0, 0, sw, sh);
-
-            // Calculate PiP dimensions and position
-            const pipSize = options.webcamSize || Math.round(sh * 0.25);
-            const pipShape = options.webcamShape || 'circle';
-            const pipPos = options.webcamPosition || 'bottom-right';
-            const margin = 24;
-
-            let px = sw - pipSize - margin;
-            let py = sh - pipSize - margin;
-            if (pipPos === 'bottom-left') {
-              px = margin;
-              py = sh - pipSize - margin;
-            } else if (pipPos === 'top-right') {
-              px = sw - pipSize - margin;
-              py = margin;
-            } else if (pipPos === 'top-left') {
-              px = margin;
-              py = margin;
-            }
-
-            offCtx.save();
-            offCtx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-            offCtx.shadowBlur = 10;
-
-            if (pipShape === 'circle') {
-              const radius = pipSize / 2;
-              offCtx.beginPath();
-              offCtx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
-              offCtx.closePath();
-              offCtx.clip();
-              offCtx.drawImage(webcamVideo, px, py, pipSize, pipSize);
-              offCtx.restore();
-
-              // Glowing border
-              offCtx.save();
-              offCtx.strokeStyle = '#38bdf8';
-              offCtx.lineWidth = 3;
-              offCtx.beginPath();
-              offCtx.arc(px + radius, py + radius, radius, 0, Math.PI * 2);
-              offCtx.stroke();
-              offCtx.restore();
-            } else {
-              const rectH = Math.round(pipSize * 0.75);
-              offCtx.beginPath();
-              offCtx.roundRect(px, py, pipSize, rectH, 12);
-              offCtx.closePath();
-              offCtx.clip();
-              offCtx.drawImage(webcamVideo, px, py, pipSize, rectH);
-              offCtx.restore();
-
-              offCtx.save();
-              offCtx.strokeStyle = '#38bdf8';
-              offCtx.lineWidth = 3;
-              offCtx.beginPath();
-              offCtx.roundRect(px, py, pipSize, rectH, 12);
-              offCtx.stroke();
-              offCtx.restore();
-            }
-
-            try {
-              const outFrame = new VideoFrame(offCanvas, { timestamp: frame.timestamp });
-              frame.close();
-              controller.enqueue(outFrame);
-            } catch (err) {
-              controller.enqueue(frame);
-            }
-          } else {
-            // Pure Region Crop - Zero-copy visibleRect in GPU memory
-            try {
-              const croppedFrame = new VideoFrame(frame, {
-                visibleRect: { x: sx, y: sy, width: sw, height: sh },
-                displayWidth: sw,
-                displayHeight: sh
-              });
-              frame.close();
-              controller.enqueue(croppedFrame);
-            } catch (err) {
-              controller.enqueue(frame);
-            }
-          }
-        }
-      });
-
-      processor.readable.pipeThrough(transformer).pipeTo(generator.writable).catch((e) => {
-        console.warn('Video pipeline stream closed:', e);
-      });
-
-      return {
-        track: generator,
-        cleanup: () => {
-          try {
-            generator.stop();
-          } catch (e) {}
-        }
-      };
-    } catch (pipelineErr) {
-      console.warn('Insertable streams setup failed, falling back to direct track:', pipelineErr);
+        ctx.save();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(px, py, pipSize, rectH, 12);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 
-  // Graceful fallback to raw screen track
+  // Drive frames via MediaStreamTrackProcessor (hardware pushed)
+  if (typeof MediaStreamTrackProcessor !== 'undefined') {
+    try {
+      const processor = new MediaStreamTrackProcessor({ track: screenVideoTrack });
+      processorReader = processor.readable.getReader();
+
+      (async () => {
+        while (isRunning) {
+          try {
+            const { done, value: frame } = await processorReader.read();
+            if (done || !frame) break;
+            render(frame);
+            frame.close();
+          } catch (e) {
+            break;
+          }
+        }
+      })();
+    } catch (err) {
+      console.warn('Track processor failed, falling back to timer:', err);
+    }
+  }
+
+  // Fallback timer if processor unavailable
+  if (!processorReader) {
+    timerId = setInterval(() => {
+      if (screenVideo && screenVideo.readyState >= 2) {
+        render(screenVideo);
+      }
+    }, 1000 / fps);
+  }
+
+  const canvasStream = canvas.captureStream(fps);
+  const canvasTrack = canvasStream.getVideoTracks()[0];
+
   return {
-    track: screenVideoTrack,
-    cleanup: () => {}
+    track: canvasTrack || screenVideoTrack,
+    cleanup: () => {
+      isRunning = false;
+      if (processorReader) processorReader.cancel().catch(() => {});
+      if (timerId) clearInterval(timerId);
+      if (canvasTrack && canvasTrack !== screenVideoTrack) canvasTrack.stop();
+    }
   };
 }
 
@@ -502,7 +536,7 @@ async function stopRecording() {
   }
 
   const totalDurationSec = getElapsedSeconds();
-  const totalDurationMs = totalDurationSec * 1000;
+  const totalDurationMs = Math.max(1000, totalDurationSec * 1000);
 
   return new Promise((resolve, reject) => {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -513,9 +547,20 @@ async function stopRecording() {
     mediaRecorder.onstop = async () => {
       try {
         const rawBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+        console.log(`Recording onstop: collected ${recordedChunks.length} chunks, total raw size: ${rawBlob.size} bytes (${(rawBlob.size / (1024 * 1024)).toFixed(2)} MB)`);
+
+        if (rawBlob.size === 0) {
+          throw new Error('Recorded video data was empty (0 bytes). Check that screen sharing was active.');
+        }
 
         // Patch EBML duration so WebM is 100% seekable and duration is accurate
-        const seekableBlob = await fixWebmDuration(rawBlob, totalDurationMs);
+        let seekableBlob = rawBlob;
+        try {
+          seekableBlob = await fixWebmDuration(rawBlob, totalDurationMs);
+        } catch (patchErr) {
+          console.warn('EBML duration patch error, using raw blob:', patchErr);
+          seekableBlob = rawBlob;
+        }
 
         // Determine resolution for database metadata
         let recWidth = 1920;
@@ -545,7 +590,7 @@ async function stopRecording() {
           fileSize: seekableBlob.size,
           width: recWidth,
           height: recHeight,
-          hasMic: !!currentOptions.micAudio,
+          hasMic: !!(micStream && micStream.getAudioTracks().length > 0),
           hasNoiseCancellation: !!currentOptions.noiseCancellation,
           preset: currentOptions.ncPreset || 'balanced',
           createdAt: Date.now()
@@ -568,7 +613,16 @@ async function stopRecording() {
       }
     };
 
-    mediaRecorder.stop();
+    try {
+      if (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused') {
+        mediaRecorder.requestData(); // Force flushing pending chunks
+      }
+      mediaRecorder.stop();
+    } catch (e) {
+      console.warn('mediaRecorder stop error:', e);
+      cleanupResources();
+      reject(e);
+    }
   });
 }
 
